@@ -1,41 +1,57 @@
 import pytest
 from unittest.mock import MagicMock
-
-# Import class SheetsLoader (File etl/loader.py hiện đang trống)
 from etl.loader import SheetsLoader
 
 class TestSheetsLoader:
     
+    def test_initialization(self):
+        mock_client = MagicMock()
+        mock_spreadsheet = MagicMock()
+        mock_client.open_by_url.return_value = mock_spreadsheet
+        
+        # Giả lập sheet tồn tại
+        mock_spreadsheet.worksheet.return_value = MagicMock()
+        
+        loader = SheetsLoader(mock_client, "http://fake.url")
+        
+        mock_client.open_by_url.assert_called_with("http://fake.url")
+        assert loader.db_sheet is not None
+        assert loader.dashboard_sheet is not None
+
     def test_append_new_task(self):
-        """Test việc gọi API thêm 1 dòng mới vào Google Sheets."""
-        # Mock đối tượng Google Sheet (worksheet)
-        mock_sheet = MagicMock()
+        mock_client = MagicMock()
+        loader = SheetsLoader(mock_client, "url")
         
-        loader = SheetsLoader(sheet_client=MagicMock())
-        # Cố tình ghi đè sheet thành đối tượng mock để kiểm tra
-        loader.main_sheet = mock_sheet
+        mock_db_sheet = MagicMock()
+        loader.db_sheet = mock_db_sheet
         
-        row_data = ["2026-07-07 10:00:00", "id1", "Task Name", "9.0"]
+        row_data = ["123", "Task", "Closed"]
         loader.append_new_task(row_data)
         
-        # Kiểm tra xem hàm append_row có được gọi với đúng data không
-        mock_sheet.append_row.assert_called_once_with(row_data)
+        mock_db_sheet.append_row.assert_called_once_with(row_data)
+
+    def test_bulk_update_database(self):
+        mock_client = MagicMock()
+        loader = SheetsLoader(mock_client, "url")
+        
+        mock_db_sheet = MagicMock()
+        loader.db_sheet = mock_db_sheet
+        
+        table_data = [["A", "B"], ["1", "2"]]
+        loader.bulk_update_database(table_data)
+        
+        mock_db_sheet.clear.assert_called_once()
+        mock_db_sheet.update.assert_called_once_with(values=table_data, range_name='A1')
 
     def test_update_dashboard_view(self):
-        """Test logic cập nhật Dashboard View (Xóa dữ liệu cũ và cập nhật dữ liệu mới)."""
-        mock_dashboard_sheet = MagicMock()
+        mock_client = MagicMock()
+        loader = SheetsLoader(mock_client, "url")
         
-        loader = SheetsLoader(sheet_client=MagicMock())
-        loader.dashboard_sheet = mock_dashboard_sheet
+        mock_dash_sheet = MagicMock()
+        loader.dashboard_sheet = mock_dash_sheet
         
-        filtered_data = [
-            ["Date", "Task ID", "Name", "Score"],
-            ["2026-07-07 10:00:00", "id1", "Task Name", "9.0"]
-        ]
-        
+        filtered_data = [["Ngày", "Điểm"], ["2023-01-01", 10.0]]
         loader.update_dashboard_view(filtered_data)
         
-        # Kiểm tra Dashboard đã được clear chưa
-        mock_dashboard_sheet.clear.assert_called_once()
-        # Kiểm tra Dashboard đã được update dòng mới chưa
-        mock_dashboard_sheet.update.assert_called_once_with(values=filtered_data, range_name='A1')
+        mock_dash_sheet.clear.assert_called_once()
+        mock_dash_sheet.update.assert_called_once_with(values=filtered_data, range_name='A1')

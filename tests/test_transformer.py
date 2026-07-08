@@ -5,101 +5,104 @@ from etl.transformer import DataTransformer
 
 class TestDataTransformer:
     
-    def test_extract_performance_score(self):
-        """Test việc bóc tách đúng điểm Performance Score từ mảng custom_fields của ClickUp."""
+    def test_format_timestamp(self):
+        transformer = DataTransformer()
+        # 1783530697788 ms -> 2026-07-08 23:11:37 (timezone dependent, test a fixed value)
+        ts_str = "1700000000000" # 2023-11-14 22:13:20 in UTC+0, this test is local-TZ dependent
+        # To avoid TZ issues in test, we just check if it returns a string in correct format
+        result = transformer.format_timestamp(ts_str)
+        assert len(result) == 19
+        assert result.count("-") == 2
+        assert result.count(":") == 2
+        
+        # Test rỗng
+        assert transformer.format_timestamp("") == ""
+        assert transformer.format_timestamp(None) == ""
+
+    def test_extract_field(self):
+        transformer = DataTransformer()
+        custom_fields = [
+            {"name": "Năng lực chuyên môn", "value": "5"},
+            {"name": "Hiệu suất với mục tiêu", "value": "4"}
+        ]
+        
+        assert transformer.extract_field(custom_fields, ["năng lực"]) == "5"
+        assert transformer.extract_field(custom_fields, ["mục tiêu"]) == "4"
+        assert transformer.extract_field(custom_fields, ["không tồn tại"]) == ""
+
+    def test_format_task_to_row(self):
+        transformer = DataTransformer()
         raw_task = {
             "id": "123",
-            "name": "Nghiên cứu AI",
+            "name": "Task Test",
+            "status": {"status": "Closed", "type": "closed"},
+            "date_closed": "1700000000000",
             "custom_fields": [
-                {"name": "Trạng thái", "value": "Done"},
-                {"name": "🔌 Hiệu xuất với mục tiêu", "value": 9.5}
+                {"name": "Năng lực chuyên môn", "value": "3"},
+                {"name": "Hiệu suất với mục tiêu", "value": "5"}
             ]
         }
         
-        transformer = DataTransformer()
-        score = transformer.extract_score(raw_task)
-        
-        assert score == 9.5
+        row = transformer.format_task_to_row(raw_task)
+        assert len(row) == 6
+        assert row[0] == "123"
+        assert row[1] == "Task Test"
+        assert row[2] == "Closed"
+        assert row[4] == "3"
+        assert row[5] == "5"
 
-    def test_extract_score_missing_field(self):
-        """Test trường hợp task không có trường Performance Score."""
-        raw_task = {
-            "id": "124",
-            "name": "Họp team",
-            "custom_fields": [
-                {"name": "Trạng thái", "value": "Done"}
-            ]
-        }
-        
+    def test_filter_last_30_days(self):
         transformer = DataTransformer()
-        score = transformer.extract_score(raw_task)
         
-        assert score is None
-
-    def test_filter_30_days_data(self):
-        """Test logic lọc dữ liệu chỉ lấy 30 ngày gần nhất."""
+        # Giả lập ngày hôm nay, 10 ngày trước, 40 ngày trước
         today = datetime.now()
-        yesterday = today - timedelta(days=1)
-        forty_days_ago = today - timedelta(days=40)
+        day_10 = today - timedelta(days=10)
+        day_40 = today - timedelta(days=40)
         
-        date_format = "%Y-%m-%d %H:%M:%S"
-        
-        mock_sheet_data = [
-            ["Date", "Task ID", "Name", "Score"],
-            [yesterday.strftime(date_format), "1", "Task Hôm Qua", "9"],
-            [forty_days_ago.strftime(date_format), "2", "Task Quá Hạn", "8"]
+        data = [
+            ["ID_Hdr", "Tên_Hdr", "Status_Hdr", "Ngày hoàn thành (End Time)", "NL", "MT"],
+            ["1", "Task 1", "Closed", today.strftime("%Y-%m-%d %H:%M:%S"), "5", "5"],
+            ["2", "Task 2", "Closed", day_10.strftime("%Y-%m-%d %H:%M:%S"), "4", "4"],
+            ["3", "Task 3", "Closed", day_40.strftime("%Y-%m-%d %H:%M:%S"), "3", "3"], # Sẽ bị loại
+            ["4", "Lỗi format", "Closed", "2024-invalid-date", "0", "0"] # Bị loại
         ]
         
-        transformer = DataTransformer()
-        filtered_data = transformer.filter_last_30_days(mock_sheet_data)
+        filtered = transformer.filter_last_30_days(data)
         
-        assert len(filtered_data) == 2
-        assert filtered_data[1][2] == "Task Hôm Qua"
+        assert len(filtered) == 2
+        assert filtered[0][0] == "1"
+        assert filtered[1][0] == "2"
 
     def test_calculate_daily_averages(self):
-        """Test TDD: Kiểm tra logic tính điểm trung bình (Năng lực + Mục tiêu) nhóm theo ngày."""
+        transformer = DataTransformer()
+        
         today = datetime.now()
-        yesterday = today - timedelta(days=1)
-        two_days_ago = today - timedelta(days=2)
-        forty_days_ago = today - timedelta(days=40)
+        today_str = today.strftime("%Y-%m-%d %H:%M:%S")
+        today_key = today.strftime("%Y-%m-%d")
         
-        date_format = "%Y-%m-%d %H:%M:%S"
+        day2 = today - timedelta(days=1)
+        day2_str = day2.strftime("%Y-%m-%d %H:%M:%S")
+        day2_key = day2.strftime("%Y-%m-%d")
         
-        mock_data = [
-            {
-                "Ngày hoàn thành (End Time)": yesterday.strftime(date_format),
-                "Hiệu suất với năng lực": 4,
-                "Hiệu xuất với mục tiêu": 5
-            },
-            {
-                "Ngày hoàn thành (End Time)": yesterday.strftime(date_format),
-                "Hiệu suất với năng lực": 3,
-                "Hiệu xuất với mục tiêu": 4
-            },
-            {
-                "Ngày hoàn thành (End Time)": two_days_ago.strftime(date_format),
-                "Hiệu suất với năng lực": "5",
-                "Hiệu xuất với mục tiêu": ""
-            },
-            {
-                "Ngày hoàn thành (End Time)": forty_days_ago.strftime(date_format),
-                "Hiệu suất với năng lực": 10,
-                "Hiệu xuất với mục tiêu": 10
-            }
+        # Tạo dữ liệu test
+        # Hôm nay: 2 Task (Task 1: 5+5=10đ, Task 2: 3+5=8đ) -> TB hôm nay = 9.0
+        # Hôm qua: 1 Task (Task 3: 4+4=8đ) -> TB hôm qua = 8.0
+        data = [
+            ["1", "T1", "Closed", today_str, "5", "5"],
+            ["2", "T2", "Closed", today_str, "3", "5"],
+            ["3", "T3", "Closed", day2_str, "4", "4"],
+            ["4", "Lỗi rỗng", "Closed", today_str, "", ""], # (0+0 = 0)
         ]
         
-        transformer = DataTransformer()
-        result = transformer.calculate_daily_averages(mock_data, days=30)
+        result = transformer.calculate_daily_averages(data)
         
-        # Mong đợi: 1 header + 2 ngày hợp lệ (two_days_ago, yesterday)
-        assert len(result) == 3
+        assert len(result) == 3 # Header + 2 ngày
+        assert result[0] == ["Ngày", "Điểm số"]
         
-        assert result[0] == ["Ngày", "Điểm trung bình (Năng lực + Mục tiêu)"]
+        # Kết quả đã được sort theo ngày (ngày hôm qua đứng trước)
+        assert result[1][0] == day2_key
+        assert result[1][1] == 8.0
         
-        # Test 1: two_days_ago -> 1 task: Năng lực=5, Mục tiêu=0 -> Tổng=5 -> TB=5.0
-        assert result[1][0] == two_days_ago.strftime("%Y-%m-%d")
-        assert result[1][1] == 5.0
-        
-        # Test 2: yesterday -> 2 task: (4+5=9) và (3+4=7) -> Tổng 2 task = 16 -> TB = 8.0
-        assert result[2][0] == yesterday.strftime("%Y-%m-%d")
-        assert result[2][1] == 8.0
+        # TB hôm nay là (10 + 8 + 0) / 3 = 6.0
+        assert result[2][0] == today_key
+        assert result[2][1] == 6.0

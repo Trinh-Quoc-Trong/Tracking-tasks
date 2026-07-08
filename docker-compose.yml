@@ -1,0 +1,13 @@
+version: '3.8'
+
+services:
+  webhook_server:
+    build: .
+    container_name: clickup_webhook_server
+    restart: always
+    env_file:
+      - .env
+    volumes:
+      - ./credentials.json:/app/credentials.json:ro
+    ports:
+      - "8000:8000"
