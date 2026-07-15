@@ -67,7 +67,7 @@ class SheetsLoader:
                     "addChart": {
                         "chart": {
                             "spec": {
-                                "title": "Phong độ trung bình 30 ngày (Năng lực + Mục tiêu)",
+                                "title": "Phong độ trung bình 30 ngày",
                                 "basicChart": {
                                     "chartType": "LINE",
                                     "legendPosition": "BOTTOM_LEGEND",

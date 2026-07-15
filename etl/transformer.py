@@ -1,6 +1,8 @@
 from datetime import datetime, timedelta
 from collections import defaultdict
 
+import re
+
 class DataTransformer:
     
     @staticmethod
@@ -15,18 +17,20 @@ class DataTransformer:
             return ""
 
     @staticmethod
-    def extract_field(custom_fields: list, target_keywords: list) -> str:
-        """Tìm và trích xuất giá trị từ Custom Fields dựa trên từ khóa."""
-        for field in custom_fields:
-            name = field.get('name', '').lower()
-            if any(kw in name for kw in target_keywords):
-                return field.get('value', "")
+    def extract_score_from_description(description: str) -> str:
+        """Trích xuất con số đầu tiên (từ 1 đến 10) trong phần description."""
+        if not description:
+            return ""
+        # Match các số từ 1 đến 10, đứng độc lập (không nằm trong 1 từ khác)
+        match = re.search(r'\b([1-9]|10)\b', str(description))
+        if match:
+            return match.group(1)
         return ""
 
     def format_task_to_row(self, task: dict) -> list:
         """
         Biến đổi một object JSON Task nguyên bản thành một List 1D để ghi vào Google Sheets.
-        Format: [Task ID, Tên Task, Trạng thái, Ngày hoàn thành, Năng lực, Mục tiêu]
+        Format: [Task ID, Tên Task, Trạng thái, Ngày hoàn thành, Điểm số]
         """
         task_id = task.get("id", "")
         name = task.get("name", "")
@@ -37,11 +41,10 @@ class DataTransformer:
         
         end_time = self.format_timestamp(task.get("date_closed"))
         
-        custom_fields = task.get("custom_fields", [])
-        score_nang_luc = self.extract_field(custom_fields, ["năng lực"])
-        score_muc_tieu = self.extract_field(custom_fields, ["mục tiêu"])
+        description = task.get("description", "") or task.get("text_content", "")
+        score = self.extract_score_from_description(description)
         
-        return [task_id, name, status_name, end_time, score_nang_luc, score_muc_tieu]
+        return [task_id, name, status_name, end_time, score]
 
     def filter_last_30_days(self, data_rows: list) -> list:
         """
@@ -68,13 +71,12 @@ class DataTransformer:
         
     def calculate_daily_averages(self, data_rows: list) -> list:
         """
-        Tính điểm số trung bình (Năng lực + Mục tiêu) của từng ngày dựa trên danh sách data.
-        Đầu ra là danh sách mảng 2 chiều [Ngày, Điểm trung bình].
+        Tính điểm số trung bình của từng ngày. Lấp đầy đủ 30 ngày gần nhất (những ngày không có task sẽ là 0).
         """
         daily_scores = defaultdict(list)
         
         for row in data_rows:
-            if not row or len(row) < 6:
+            if not row or len(row) < 5:
                 continue
                 
             date_str = row[3]
@@ -86,26 +88,25 @@ class DataTransformer:
                 continue
                 
             try:
-                nang_luc = float(row[4] or 0)
+                total_score = float(row[4] or 0)
             except ValueError:
-                nang_luc = 0.0
+                total_score = 0.0
                 
-            try:
-                muc_tieu = float(row[5] or 0)
-            except ValueError:
-                muc_tieu = 0.0
-                
-            total_score = nang_luc + muc_tieu
             daily_scores[day_key].append(total_score)
             
-        # Tính trung bình và sort theo ngày
         output = [["Ngày", "Điểm số"]]
-        sorted_days = sorted(daily_scores.keys())
         
-        for day in sorted_days:
-            scores = daily_scores[day]
+        # Lấp đầy đủ 30 ngày (từ 29 ngày trước đến hôm nay)
+        today = datetime.now()
+        for i in range(29, -1, -1):
+            day_dt = today - timedelta(days=i)
+            day = day_dt.strftime("%Y-%m-%d")
+            
+            scores = daily_scores.get(day)
             if scores:
                 avg_score = sum(scores) / len(scores)
                 output.append([day, round(avg_score, 2)])
+            else:
+                output.append([day, 0.0])
                 
         return output

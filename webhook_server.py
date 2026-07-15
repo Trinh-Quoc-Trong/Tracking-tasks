@@ -27,11 +27,16 @@ def process_closed_task(task_id: str):
         print(f"❌ Không lấy được dữ liệu chi tiết cho task {task_id}: {e}")
         return
         
+    # Bỏ qua nếu đây là Subtask (có chứa parent ID)
+    if task_data.get("parent"):
+        print(f"⏭️ Bỏ qua task {task_id} vì đây là một Subtask.")
+        return
+        
     # 2. TRANSFORM
     transformer = DataTransformer()
     row = transformer.format_task_to_row(task_data)
     
-    print(f"-> Đã bóc tách dữ liệu: {row[1]} (Năng lực: {row[4]}, Mục tiêu: {row[5]})")
+    print(f"-> Đã bóc tách dữ liệu: {row[1]} (Điểm số: {row[4]})")
     
     # 3. LOAD
     try:

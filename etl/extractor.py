@@ -16,7 +16,7 @@ class ClickUpExtractor:
         page = 0
         while True:
             params = {
-                "subtasks": "true",
+                "subtasks": "false",
                 "include_closed": str(include_closed).lower(),
                 "page": page
             }
